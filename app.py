@@ -41,9 +41,42 @@ st.caption(f"Loaded dataset with {data.shape[0]:,} rows and {data.shape[1]:,} co
 st.header("Dataset Preview")
 st.dataframe(data.head(10))
 
-st.subheader("Missing Values")
-missing = data.isna().sum()
-st.write(missing)
+st.subheader("Missing & Empty Values")
+
+# Count NaN values per column
+na_counts = data.isna().sum()
+st.write("NaN counts per column:")
+st.write(na_counts)
+
+# Count zeros in numeric columns
+numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+if numeric_cols:
+    zero_counts = (data[numeric_cols] == 0).sum()
+    st.write("Zero counts per numeric column:")
+    st.write(zero_counts)
+else:
+    zero_counts = pd.Series(dtype=int)
+    st.write("No numeric columns detected for zero-value checks.")
+
+# Count empty or whitespace-only strings in object (text) columns
+obj_cols = data.select_dtypes(include=[object]).columns.tolist()
+blank_counts = {}
+if obj_cols:
+    for col in obj_cols:
+        blank = data[col].apply(lambda x: isinstance(x, str) and x.strip() == "").sum()
+        blank_counts[col] = int(blank)
+    st.write("Empty/whitespace-only string counts per text column:")
+    st.write(pd.Series(blank_counts))
+else:
+    st.write("No text columns to check for empty strings.")
+
+# Totals summary
+total_nans = int(na_counts.sum())
+total_zeros = int(zero_counts.sum()) if not zero_counts.empty else 0
+total_blanks = int(sum(blank_counts.values())) if blank_counts else 0
+st.markdown(
+    f"**Totals — NaNs:** {total_nans:,} — **Zeros:** {total_zeros:,} — **Empty strings:** {total_blanks:,}"
+)
 
 st.subheader("Descriptive Statistics")
 st.dataframe(data.describe().T)
@@ -139,32 +172,42 @@ if numeric_columns:
     )
     stacked = upper_triangle.stack().sort_values()
 
-    strong_negative = stacked.iloc[0]
-    strong_positive = stacked.iloc[-1]
+    if stacked.empty:
+        st.info("Not enough numeric columns to compute key pairwise correlations.")
+        neg_pair = pos_pair = (None, None)
+        strong_negative = strong_positive = np.nan
+    else:
+        strong_negative = stacked.iloc[0]
+        strong_positive = stacked.iloc[-1]
+        neg_pair = stacked.index[0]
+        pos_pair = stacked.index[-1]
 
-    neg_pair = strong_negative.name
-    pos_pair = strong_positive.name
-
-    st.markdown(
-        f"""
+        st.markdown(
+            f"""
 **Strong Negative Correlation:** {neg_pair[0]} vs {neg_pair[1]} = {strong_negative:.2f}
 
 **Strong Positive Correlation:** {pos_pair[0]} vs {pos_pair[1]} = {strong_positive:.2f}
 """
-    )
+        )
 
 st.header("Interpretation & Discussion")
 
-if numeric_columns:
-    st.markdown(
-        f"""
+if numeric_columns and not stacked.empty:
+        st.markdown(
+                f"""
 - The strongest positive correlation is between **{pos_pair[0]}** and **{pos_pair[1]}**
-  (r = {strong_positive:.2f}), suggesting they tend to increase together.
+    (r = {strong_positive:.2f}), suggesting they tend to increase together.
 - The strongest negative correlation is between **{neg_pair[0]}** and **{neg_pair[1]}**
-  (r = {strong_negative:.2f}), indicating one tends to decrease as the other increases.
+    (r = {strong_negative:.2f}), indicating one tends to decrease as the other increases.
 - Several variables show weaker correlations, which may indicate limited linear relationships
-  or influence from confounding variables.
-- If normality tests indicate non-normal variables, Spearman correlations can be more robust to
-  non-linear or non-normal patterns.
+    or influence from confounding variables.
+- Because normality tests in this dataset indicate non-normal variables, Spearman correlations can be more robust to
+    non-linear or non-normal patterns.
 """
-    )
+        )
+else:
+        st.markdown(
+                """
+- Not enough numeric columns to provide interpretation of pairwise correlations.
+"""
+        )
